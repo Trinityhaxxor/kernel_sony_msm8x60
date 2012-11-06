@@ -140,6 +140,7 @@ config ARCH_MSM8X60
 	select MSM_SCM if SMP
 	select MULTI_IRQ_HANDLER
 	select MSM_MULTIMEDIA_USE_ION
+	select MSM_IOMMU_GPU_SYNC
 	select MSM_PM8X60 if PM
 	select MSM_RUN_QUEUE_STATS
 	select ARM_HAS_SG_CHAIN
@@ -178,6 +179,8 @@ config ARCH_MSM8960
 	select HOLES_IN_ZONE if SPARSEMEM
 	select MSM_RUN_QUEUE_STATS
 	select ARM_HAS_SG_CHAIN
+	select MSM_KRAIT_WFE_FIXUP
+	select MSM_IOMMU_GPU_SYNC
 
 config ARCH_MSM8930
 	bool "MSM8930"
@@ -209,6 +212,8 @@ config ARCH_MSM8930
 	select MSM_PM8X60 if PM
 	select HOLES_IN_ZONE if SPARSEMEM
 	select ARM_HAS_SG_CHAIN
+	select MSM_KRAIT_WFE_FIXUP
+	select MSM_IOMMU_GPU_SYNC
 
 config ARCH_APQ8064
 	bool "APQ8064"
@@ -238,6 +243,11 @@ config ARCH_APQ8064
 
 config ARCH_MSM8974
 	bool "MSM8974"
+	select MSM_KRAIT_WFE_FIXUP
+	select MSM_IOMMU_GPU_SYNC
+
+config ARCH_MSMCOPPER
+	bool "MSM Copper"
 	select ARCH_MSM_KRAITMP
 	select GPIO_MSM_V3
 	select ARM_GIC
