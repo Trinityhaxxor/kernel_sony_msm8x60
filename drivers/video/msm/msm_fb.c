@@ -1747,6 +1747,33 @@ static int msm_fb_release(struct fb_info *info, int user)
 
 DEFINE_SEMAPHORE(msm_fb_pan_sem);
 
+static int msm_fb_pan_idle(struct msm_fb_data_type *mfd)
+{
+	int ret = 0;
+
+	mutex_lock(&mfd->sync_mutex);
+	if (mfd->is_committing) {
+		mutex_unlock(&mfd->sync_mutex);
+		ret = wait_for_completion_interruptible_timeout(
+				&mfd->commit_comp,
+			msecs_to_jiffies(WAIT_DISP_OP_TIMEOUT));
+		if (ret < 0)
+			ret = -ERESTARTSYS;
+		else if (!ret)
+			pr_err("%s wait for commit_comp timeout %d %d",
+				__func__, ret, mfd->is_committing);
+		if (ret <= 0) {
+			mutex_lock(&mfd->sync_mutex);
+			mfd->is_committing = 0;
+			complete_all(&mfd->commit_comp);
+			mutex_unlock(&mfd->sync_mutex);
+		}
+	} else {
+		mutex_unlock(&mfd->sync_mutex);
+	}
+	return ret;
+}
+
 static void bl_workqueue_handler(struct work_struct *work)
 {
 	struct msm_fb_data_type *mfd = container_of(to_delayed_work(work),
@@ -3545,25 +3572,19 @@ static int msmfb_display_commit(struct fb_info *info,
 		pr_err("%s:copy_from_user failed", __func__);
 		return ret;
 	}
+	buf_fence = &disp_commit.buf_fence;
+	if (buf_fence->acq_fen_fd_cnt > 0)
+		ret = buf_fence_process(mfd, buf_fence);
+	if ((!ret) && (buf_fence->rel_fen_fd[0] > 0))
+		copy_back = TRUE;
 
-	if (disp_commit.flags & MDP_DISPLAY_COMMIT_OVERLAY) {
-		ret = mdp4_overlay_commit(info);
-	} else {
-		buf_fence = &disp_commit.buf_fence;
-		if (buf_fence->acq_fen_fd_cnt > 0)
-			ret = buf_fence_process(mfd, buf_fence);
-		if ((!ret) && (buf_fence->rel_fen_fd[0] > 0))
-			copy_back = TRUE;
+	ret = msm_fb_pan_display_ex(info, &disp_commit);
 
-		ret = msm_fb_pan_display_ex(&disp_commit.var,
-			      info, disp_commit.wait_for_finish);
-
-		if (copy_back) {
-			ret = copy_to_user(argp,
-				&disp_commit, sizeof(disp_commit));
-			if (ret)
-				pr_err("%s:copy_to_user failed", __func__);
-		}
+	if (copy_back) {
+		ret = copy_to_user(argp,
+			&disp_commit, sizeof(disp_commit));
+		if (ret)
+			pr_err("%s:copy_to_user failed", __func__);
 	}
 	return ret;
 }
