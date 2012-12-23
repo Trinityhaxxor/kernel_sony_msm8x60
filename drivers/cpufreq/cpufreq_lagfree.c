@@ -42,6 +42,13 @@
 #define FREQ_AWAKE_MIN 					CONFIG_LAGFREE_FREQ_AWAKE_MIN
 #define FREQ_STEP_UP_SLEEP_PERCENT 			CONFIG_LAGFREE_FREQ_STEP_UP_SLEEP_PERCENT
 
+/* Nozomi Specifics */
+
+#define CONFIG_CPU_FREQ_SAMPLING_LATENCY_MULTIPLIER		(1000)
+#define CONFIG_CPU_FREQ_MIN_TICKS		(10)
+
+/* Nozomi end */
+
 /*
  * The polling frequency of this governor depends on the capability of
  * the processor. Default polling frequency is 1000 times the transition
