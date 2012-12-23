@@ -15,7 +15,21 @@
 #define AVS_H
 
 #define VOLTAGE_MIN  1000 /* mV */
+
+/* According to acpuclock-8x60.c */
+
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_HIGH_STEPPING
+#define VOLTAGE_MAX  1350
+#endif
+
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_LOW_STEPPING
+#define VOLTAGE_MAX  1350
+#endif
+
+#ifdef CONFIG_NOZOMI_STOCK_FREQS
 #define VOLTAGE_MAX  1250
+#endif
+
 #define VOLTAGE_STEP 25
 
 int __init avs_init(int (*set_vdd)(int), u32 freq_cnt, u32 freq_idx);
