@@ -2274,12 +2274,12 @@ config CPU_VOLTAGE_TABLE
 	bool "Enable CPU Voltage Table via sysfs for adjustements"	
 	default n
 
-config NOZOMI_OVERCLOCKABLE_HIGH_STEPPINGS
+config NOZOMI_OVERCLOCKABLE_HIGH_STEPPING
 	bool "Enable overclocking for the Sony Xperia S (High Steppings)"
 	depends on ARCH_MSM8X60
 	default n
 
-config NOZOMI_OVERCLOCKABLE_LOW_STEPPINGS
+config NOZOMI_OVERCLOCKABLE_LOW_STEPPING
 	bool "Enable overclocking for the Sony Xperia S (Low Steppings)"
 	depends on ARCH_MSM8X60
 	default n
