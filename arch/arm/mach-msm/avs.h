@@ -27,6 +27,7 @@
 #endif
 
 #ifdef CONFIG_NOZOMI_STOCK_FREQS
+/* Sony Default */
 #define VOLTAGE_MAX  1250
 #endif
 
