@@ -2284,4 +2284,9 @@ config NOZOMI_STOCK_FREQS
 	depends on ARCH_MSM8X60
 	default y
 
+config _ADRENO220_OVERCLOCKABLE
+	bool "Enable overclocking for the Sony Xperia S"
+	depends on ARCH_MSM8X60
+	default n
+
 endif
