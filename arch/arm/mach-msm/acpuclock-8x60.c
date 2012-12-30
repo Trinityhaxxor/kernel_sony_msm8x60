@@ -863,7 +863,7 @@ static void __init scpll_init(int pll, unsigned int max_l_val)
 
 #ifdef CONFIG_NOZOMI_OVERCLOCKABLE
 	/* Calibrate the SCPLL for the frequency range needed. */
-	regval = (max_l_val << 28) | (L_VAL_SCPLL_CAL_MIN << 16);
+	regval = (L_VAL_SCPLL_CAL_MAX << 28) | (L_VAL_SCPLL_CAL_MIN << 16);
 	writel_relaxed(regval, sc_pll_base[pll] + SCPLL_CAL_OFFSET);
 #endif
 
