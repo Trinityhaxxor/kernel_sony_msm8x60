@@ -8,6 +8,12 @@
 # any tracked files which get ignored after the change.
 #
 
+#
+# Ignore my chain-compiling-tools
+#
+000_cpu_gpu_oc_defconfig
+000_cpu_oc_defconfig
+
 # 
 # Special rules
 #
