@@ -1049,7 +1049,7 @@ static __init struct clkctl_acpu_speed *select_freq_plan(void)
 	if (speed_bin == 0x2) {
 
 #ifdef CONFIG_NOZOMI_STOCK_FREQS
-		max_khz = 1512000
+		max_khz = 1512000;
 #endif
 
 #ifdef CONFIG_NOZOMI_OVERCLOCKABLE
@@ -1086,7 +1086,7 @@ static __init struct clkctl_acpu_speed *select_freq_plan(void)
 	} else if (speed_bin == 0x1) {
 
 #ifdef CONFIG_NOZOMI_STOCK_FREQS
-		max_khz = 1512000
+		max_khz = 1512000;
 #endif
 
 #ifdef CONFIG_NOZOMI_OVERCLOCKABLE
