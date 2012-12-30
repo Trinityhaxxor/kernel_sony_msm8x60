@@ -48,35 +48,25 @@
 #define FREQ_TABLE_SIZE 30
 #endif
 
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_HIGH_STEPPING
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE
 #define L_VAL_SCPLL_CAL_MAX    0x20 /* = 1728 MHz with 27MHz source */
 #define FREQ_TABLE_SIZE 34
 #endif
 
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_LOW_STEPPING
-#define L_VAL_SCPLL_CAL_MAX    0x20 /* = 1728 MHz with 27MHz source */
-#define FREQ_TABLE_SIZE 34
-#endif
-
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_HIGH_STEPPING
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE
 #define MAX_VDD_SC		1350000 /* uV */
 #define MIN_VDD_SC	       800000 /* uV */
 #define MAX_VDD_MEM		1350000 /* uV */
-#endif
-
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_LOW_STEPPING
-#define MAX_VDD_SC		1350000 /* uV */
-#define MIN_VDD_SC	       800000 /* uV */
-#define MAX_VDD_MEM		1350000 /* uV */
+#define MAX_VDD_DIG		1350000 /* uV */
 #endif
 
 #ifdef CONFIG_NOZOMI_STOCK_FREQS
 #define MAX_VDD_SC		1325000 /* uV */
 #define MIN_VDD_SC	       800000 /* uV */
 #define MAX_VDD_MEM		1325000 /* uV */
+#define MAX_VDD_DIG		1200000 /* uV */
 #endif
 
-#define MAX_VDD_DIG		1200000 /* uV */
 #define MAX_AXI			 310500 /* KHz */
 #define SCPLL_LOW_VDD_FMAX	 594000 /* KHz */
 #define SCPLL_LOW_VDD		1000000 /* uV */
@@ -187,11 +177,7 @@ static struct msm_bus_paths bw_level_tbl[] = {
 	[2] = BW_MBPS(2008), /* At least 251 MHz on bus. */
 	[3] = BW_MBPS(2480), /* At least 310 MHz on bus. */
 
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_HIGH_STEPPING
-	[4] = BW_MBPS(3200), /* At least 360 MHz on bus. */
-#endif
-
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_HIGH_STEPPING
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE
 	[4] = BW_MBPS(3200), /* At least 360 MHz on bus. */
 #endif
 
@@ -229,14 +215,7 @@ static struct clkctl_l2_speed l2_freq_tbl_v2[] = {
 	[18] = {1350000,  1, 0x19, 1200000, 1225000, 3},
 	[19] = {1404000,  1, 0x1A, 1200000, 1250000, 3},
 
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_HIGH_STEPPING
-	//extra clock steps
-	[20] = {1458000,  1, 0x1B, 1225000, 1250000, 4},
-	[21] = {1512000,  1, 0x1C, 1225000, 1250000, 4},
-	[22] = {1566000,  1, 0x1D, 1225000, 1250000, 4},
-#endif
-
-#ifdef CONFIG_NOZOMI_OVERCLOCKABLE_LOW_STEPPING
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE
 	//extra clock steps
 	[20] = {1458000,  1, 0x1B, 1225000, 1250000, 4},
 	[21] = {1512000,  1, 0x1C, 1225000, 1250000, 4},
@@ -301,6 +280,7 @@ static struct clkctl_acpu_speed acpu_freq_tbl_slowest[] = {
   { {1, 1}, 1566000,  ACPU_SCPLL, 0, 0, 1, 0x1D, L2(19), 1275000, 0x03006000},
   { {1, 1}, 1620000,  ACPU_SCPLL, 0, 0, 1, 0x1E, L2(19), 1300000, 0x03006000},
   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(19), 1325000, 0x03006000},
+  { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(22), 1350000, 0x03006000},
   { {0, 0}, 0 },
 };
 
@@ -334,6 +314,7 @@ static struct clkctl_acpu_speed acpu_freq_tbl_slower[] = {
   { {1, 1}, 1566000,  ACPU_SCPLL, 0, 0, 1, 0x1D, L2(19), 1250000, 0x03006000},
   { {1, 1}, 1620000,  ACPU_SCPLL, 0, 0, 1, 0x1E, L2(19), 1275000, 0x03006000},
   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(19), 1300000, 0x03006000},
+  { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(22), 1300000, 0x03006000},
   { {0, 0}, 0 },
 };
 
@@ -367,6 +348,7 @@ static struct clkctl_acpu_speed acpu_freq_tbl_slow[] = {
   { {1, 1}, 1566000,  ACPU_SCPLL, 0, 0, 1, 0x1D, L2(19), 1225000, 0x03006000},
   { {1, 1}, 1620000,  ACPU_SCPLL, 0, 0, 1, 0x1E, L2(19), 1225000, 0x03006000},
   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(19), 1250000, 0x03006000},
+  { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(22), 1300000, 0x03006000},
   { {0, 0}, 0 },
 };
 
@@ -400,6 +382,7 @@ static struct clkctl_acpu_speed acpu_freq_tbl_nom[] = {
   { {1, 1}, 1566000,  ACPU_SCPLL, 0, 0, 1, 0x1D, L2(19), 1175000, 0x03006000},
   { {1, 1}, 1620000,  ACPU_SCPLL, 0, 0, 1, 0x1E, L2(19), 1200000, 0x03006000},
   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(19), 1200000, 0x03006000},
+  { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(22), 1300000, 0x03006000},
   { {0, 0}, 0 },
 };
 
@@ -433,6 +416,7 @@ static struct clkctl_acpu_speed acpu_freq_tbl_fast[] = {
   { {1, 1}, 1566000,  ACPU_SCPLL, 0, 0, 1, 0x1D, L2(19), 1125000, 0x03006000},
   { {1, 1}, 1620000,  ACPU_SCPLL, 0, 0, 1, 0x1E, L2(19), 1125000, 0x03006000},
   { {1, 1}, 1674000,  ACPU_SCPLL, 0, 0, 1, 0x1F, L2(19), 1150000, 0x03006000},
+  { {1, 1}, 1728000,  ACPU_SCPLL, 0, 0, 1, 0x20, L2(22), 1300000, 0x03006000},
   { {0, 0}, 0 },
 };
 
@@ -870,9 +854,18 @@ static void __init scpll_init(int pll, unsigned int max_l_val)
 	mb();
 	udelay(10);
 
+
+#ifdef CONFIG_NOZOMI_STOCK_FREQS
 	/* Calibrate the SCPLL for the frequency range needed. */
 	regval = (max_l_val << 24) | (L_VAL_SCPLL_CAL_MIN << 16);
 	writel_relaxed(regval, sc_pll_base[pll] + SCPLL_CAL_OFFSET);
+#endif
+
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE
+	/* Calibrate the SCPLL for the frequency range needed. */
+	regval = (max_l_val << 28) | (L_VAL_SCPLL_CAL_MIN << 16);
+	writel_relaxed(regval, sc_pll_base[pll] + SCPLL_CAL_OFFSET);
+#endif
 
 	/* Start calibration */
 	writel_relaxed(SCPLL_FULL_CAL, sc_pll_base[pll] + SCPLL_CTL_OFFSET);
@@ -1054,7 +1047,15 @@ static __init struct clkctl_acpu_speed *select_freq_plan(void)
 		pvs = (pte_efuse >> 13) & 0x7;
 
 	if (speed_bin == 0x2) {
-		max_khz = 1674000;
+
+#ifdef CONFIG_NOZOMI_STOCK_FREQS
+		max_khz = 1512000
+#endif
+
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE
+		max_khz = 1728000;
+#endif
+
 		switch (pvs) {
 		case 0x7:
 		case 0x5:
@@ -1083,7 +1084,15 @@ static __init struct clkctl_acpu_speed *select_freq_plan(void)
 			break;
 		}
 	} else if (speed_bin == 0x1) {
-		max_khz = 1674000;
+
+#ifdef CONFIG_NOZOMI_STOCK_FREQS
+		max_khz = 1512000
+#endif
+
+#ifdef CONFIG_NOZOMI_OVERCLOCKABLE
+		max_khz = 1728000;
+#endif
+
 		switch (pvs) {
 		case 0x0:
 		case 0x7:
