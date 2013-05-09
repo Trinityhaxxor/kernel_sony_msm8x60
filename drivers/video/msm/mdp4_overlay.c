@@ -3747,7 +3747,7 @@ done:
 	return err;
 }
 
-int mdp4_overlay_reset()
+int mdp4_overlay_reset(void)
 {
 	memset(&perf_request, 0, sizeof(perf_request));
 	memset(&perf_current, 0, sizeof(perf_current));
