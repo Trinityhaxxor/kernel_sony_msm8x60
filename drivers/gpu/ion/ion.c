@@ -1370,6 +1370,24 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	}
+	case ION_IOC_ALLOC_MAKO:
+	{
+		struct ion_allocation_data data;
+
+		if (copy_from_user(&data, (void __user *)arg, sizeof(data)))
+			return -EFAULT;
+		data.handle = ion_alloc(client, data.len, data.align,
+					     data.flags);
+
+		if (IS_ERR(data.handle))
+			return PTR_ERR(data.handle);
+
+		if (copy_to_user((void __user *)arg, &data, sizeof(data))) {
+			ion_free(client, data.handle);
+			return -EFAULT;
+		}
+		break;
+	}
 	case ION_IOC_FREE:
 	{
 		struct ion_handle_data data;
@@ -1422,6 +1440,23 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			return ret;
 		break;
 	}
+	case ION_IOC_IMPORT_MAKO:
+	{
+		struct ion_fd_data data;
+		int ret = 0;
+		if (copy_from_user(&data, (void __user *)arg,
+				   sizeof(struct ion_fd_data)))
+			return -EFAULT;
+		data.handle = ion_import_dma_buf(client, data.fd);
+		if (IS_ERR(data.handle))
+			data.handle = NULL;
+		if (copy_to_user((void __user *)arg, &data,
+				 sizeof(struct ion_fd_data)))
+			return -EFAULT;
+		if (ret < 0)
+			return ret;
+		break;
+	}
 	case ION_IOC_CUSTOM:
 	{
 		struct ion_device *dev = client->dev;
@@ -1435,8 +1470,11 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return dev->custom_ioctl(client, data.cmd, data.arg);
 	}
 	case ION_IOC_CLEAN_CACHES:
+	case ION_IOC_CLEAN_CACHES_MAKO:
 	case ION_IOC_INV_CACHES:
+	case ION_IOC_INV_CACHES_MAKO:
 	case ION_IOC_CLEAN_INV_CACHES:
+	case ION_IOC_CLEAN_INV_CACHES_MAKO:
 	{
 		struct ion_flush_data data;
 		unsigned long start, end;
@@ -1479,6 +1517,22 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	}
 	case ION_IOC_GET_FLAGS:
+	{
+		struct ion_flag_data data;
+		int ret;
+		if (copy_from_user(&data, (void __user *)arg,
+				   sizeof(struct ion_flag_data)))
+			return -EFAULT;
+
+		ret = ion_handle_get_flags(client, data.handle, &data.flags);
+		if (ret < 0)
+			return ret;
+		if (copy_to_user((void __user *)arg, &data,
+				 sizeof(struct ion_flag_data)))
+			return -EFAULT;
+		break;
+	}
+	case ION_IOC_GET_FLAGS_MAKO:
 	{
 		struct ion_flag_data data;
 		int ret;
