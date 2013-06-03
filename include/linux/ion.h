@@ -711,6 +711,7 @@ struct ion_allocation_data {
 struct ion_allocation_data_mako {
 	size_t len;
 	size_t align;
+	unsigned int heap_mask;
 	unsigned int flags;
 	struct ion_handle *handle;
 };
