@@ -42,6 +42,9 @@
 #include <linux/android_pmem.h>
 #include <linux/leds.h>
 #include <linux/pm_runtime.h>
+#include <linux/sync.h>
+#include <linux/sw_sync.h>
+#include <linux/file.h>
 
 #define MSM_FB_C
 #include "msm_fb.h"
@@ -121,6 +124,11 @@ static void msm_fb_scale_bl(__u32 *bl_lvl);
 
 #define MSM_FB_MAX_DBGFS 1024
 #define MAX_BACKLIGHT_BRIGHTNESS 255
+
+/* 100 ms for fence time out */
+#define WAIT_FENCE_TIMEOUT 100
+/* 200 ms for display operation time out */
+#define WAIT_DISP_OP_TIMEOUT 200
 
 int msm_fb_debugfs_file_index;
 struct dentry *msm_fb_debugfs_root;
@@ -1747,6 +1755,50 @@ static int msm_fb_release(struct fb_info *info, int user)
 
 DEFINE_SEMAPHORE(msm_fb_pan_sem);
 
+int msm_fb_wait_for_fence(struct msm_fb_data_type *mfd)
+{
+	int i, ret = 0;
+	/* buf sync */
+	for (i = 0; i < mfd->acq_fen_cnt; i++) {
+		ret = sync_fence_wait(mfd->acq_fen[i], WAIT_FENCE_TIMEOUT);
+		sync_fence_put(mfd->acq_fen[i]);
+		if (ret < 0) {
+			pr_err("%s: sync_fence_wait failed! ret = %x\n",
+				__func__, ret);
+			break;
+		}
+	}
+	mfd->acq_fen_cnt = 0;
+	return ret;
+}
+
+static int msm_fb_pan_idle(struct msm_fb_data_type *mfd)
+{
+	int ret = 0;
+
+	mutex_lock(&mfd->sync_mutex);
+	if (mfd->is_committing) {
+		mutex_unlock(&mfd->sync_mutex);
+		ret = wait_for_completion_interruptible_timeout(
+				&mfd->commit_comp,
+			msecs_to_jiffies(WAIT_DISP_OP_TIMEOUT));
+		if (ret < 0)
+			ret = -ERESTARTSYS;
+		else if (!ret)
+			pr_err("%s wait for commit_comp timeout %d %d",
+				__func__, ret, mfd->is_committing);
+		if (ret <= 0) {
+			mutex_lock(&mfd->sync_mutex);
+			mfd->is_committing = 0;
+			complete_all(&mfd->commit_comp);
+			mutex_unlock(&mfd->sync_mutex);
+		}
+	} else {
+		mutex_unlock(&mfd->sync_mutex);
+	}
+	return ret;
+}
+
 static void bl_workqueue_handler(struct work_struct *work)
 {
 	struct msm_fb_data_type *mfd = container_of(to_delayed_work(work),
@@ -1763,15 +1815,12 @@ static void bl_workqueue_handler(struct work_struct *work)
 	}
 }
 
-static int msm_fb_pan_display(struct fb_var_screeninfo *var,
-			      struct fb_info *info)
+static int msm_fb_pan_display_ex(struct fb_var_screeninfo *var,
+			      struct fb_info *info, u32 wait_for_finish)
 {
-	struct mdp_dirty_region dirty;
-	struct mdp_dirty_region *dirtyPtr = NULL;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
-	struct msm_fb_panel_data *pdata =
-		(struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
-
+	struct msm_fb_backup_type *fb_backup;
+	int ret = 0;
 	/*
 	 * If framebuffer is 2, io pen display is not allowed.
 	 */
@@ -1790,6 +1839,9 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 
 	if (var->yoffset > (info->var.yres_virtual - info->var.yres))
 		return -EINVAL;
+	msm_fb_pan_idle(mfd);
+
+	mutex_lock(&mfd->sync_mutex);
 
 	if (info->fix.xpanstep)
 		info->var.xoffset =
@@ -1799,80 +1851,22 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 		info->var.yoffset =
 		    (var->yoffset / info->fix.ypanstep) * info->fix.ypanstep;
 
-	/* "UPDT" */
-	if (var->reserved[0] == 0x54445055) {
+	fb_backup = (struct msm_fb_backup_type *)mfd->msm_fb_backup;
+	memcpy(&fb_backup->info, info, sizeof(struct fb_info));
+	memcpy(&fb_backup->var, var, sizeof(struct fb_var_screeninfo));
+	mfd->is_committing = 1;
+	INIT_COMPLETION(mfd->commit_comp);
+	schedule_work(&mfd->commit_work);
+	mutex_unlock(&mfd->sync_mutex);
+	if (wait_for_finish)
+		msm_fb_pan_idle(mfd);
+	return ret;
+}
 
-		dirty.xoffset = var->reserved[1] & 0xffff;
-		dirty.yoffset = (var->reserved[1] >> 16) & 0xffff;
-
-		if ((var->reserved[2] & 0xffff) <= dirty.xoffset)
-			return -EINVAL;
-		if (((var->reserved[2] >> 16) & 0xffff) <= dirty.yoffset)
-			return -EINVAL;
-
-		dirty.width = (var->reserved[2] & 0xffff) - dirty.xoffset;
-		dirty.height =
-		    ((var->reserved[2] >> 16) & 0xffff) - dirty.yoffset;
-		info->var.yoffset = var->yoffset;
-
-		if (dirty.xoffset < 0)
-			return -EINVAL;
-
-		if (dirty.yoffset < 0)
-			return -EINVAL;
-
-		if ((dirty.xoffset + dirty.width) > info->var.xres)
-			return -EINVAL;
-
-		if ((dirty.yoffset + dirty.height) > info->var.yres)
-			return -EINVAL;
-
-		if ((dirty.width <= 0) || (dirty.height <= 0))
-			return -EINVAL;
-
-		dirtyPtr = &dirty;
-	}
-	complete(&mfd->msmfb_update_notify);
-	mutex_lock(&msm_fb_notify_update_sem);
-	if (mfd->msmfb_no_update_notify_timer.function)
-		del_timer(&mfd->msmfb_no_update_notify_timer);
-
-	mfd->msmfb_no_update_notify_timer.expires = jiffies + (2 * HZ);
-	add_timer(&mfd->msmfb_no_update_notify_timer);
-	mutex_unlock(&msm_fb_notify_update_sem);
-
-	down(&msm_fb_pan_sem);
-
-	if (info->node == 0 && !(mfd->cont_splash_done)) { /* primary */
-		mdp_set_dma_pan_info(info, NULL, TRUE);
-		if (msm_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable)) {
-			pr_err("%s: can't turn on display!\n", __func__);
-			return -EINVAL;
-		}
-	}
-
-	if (pdata && pdata->power_on_panel_at_pan) {
-		/* No vsync allowed at first pan since it will hang
-		   during dma transfer */
-		mdp_set_dma_pan_info(info, dirtyPtr, FALSE);
-	} else {
-		mdp_set_dma_pan_info(info, dirtyPtr,
-				     (var->activate == FB_ACTIVATE_VBL));
-	}
-	mdp_dma_pan_update(info);
-	up(&msm_fb_pan_sem);
-
-	if (pdata && pdata->power_on_panel_at_pan) {
-		(void)pdata->controller_on_panel_on(mfd->pdev);
-		pdata->power_on_panel_at_pan = 0;
-	}
-
-	if (unset_bl_level && !bl_updated)
-		schedule_delayed_work(&mfd->backlight_worker,
-				backlight_duration);
-
-	++mfd->panel_info.frame_count;
-	return 0;
+static int msm_fb_pan_display(struct fb_var_screeninfo *var,
+			      struct fb_info *info)
+{
+	return msm_fb_pan_display_ex(var, info, TRUE);
 }
 
 static int msm_fb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
@@ -3005,19 +2999,6 @@ static int msmfb_overlay_play_wait(struct fb_info *info, unsigned long *argp)
 	return ret;
 }
 
-static int msmfb_overlay_commit(struct fb_info *info, unsigned long *argp)
-{
-	int ret, ndx;
-
-	ret = copy_from_user(&ndx, argp, sizeof(ndx));
-	if (ret) {
-		pr_err("%s: ioctl failed\n", __func__);
-		return ret;
-	}
-
-	return mdp4_overlay_commit(info, ndx);
-}
-
 static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 {
 	int	ret;
@@ -3391,6 +3372,185 @@ static int msmfb_handle_pp_ioctl(struct msm_fb_data_type *mfd,
 	return ret;
 }
 
+static int msmfb_handle_buf_sync_ioctl(struct msm_fb_data_type *mfd,
+						struct mdp_buf_sync *buf_sync)
+{
+	int i, fence_cnt = 0, ret = 0;
+	int acq_fen_fd[MDP_MAX_FENCE_FD];
+	struct sync_fence *fence;
+
+	if ((buf_sync->acq_fen_fd_cnt > MDP_MAX_FENCE_FD) ||
+		(mfd->timeline == NULL))
+		return -EINVAL;
+
+	if ((!mfd->op_enable) || (!mfd->panel_power_on))
+		return -EPERM;
+
+	if (buf_sync->acq_fen_fd_cnt)
+		ret = copy_from_user(acq_fen_fd, buf_sync->acq_fen_fd,
+				buf_sync->acq_fen_fd_cnt * sizeof(int));
+	if (ret) {
+		pr_err("%s:copy_from_user failed", __func__);
+		return ret;
+	}
+	mutex_lock(&mfd->sync_mutex);
+	for (i = 0; i < buf_sync->acq_fen_fd_cnt; i++) {
+		fence = sync_fence_fdget(acq_fen_fd[i]);
+		if (fence == NULL) {
+			pr_info("%s: null fence! i=%d fd=%d\n", __func__, i,
+				acq_fen_fd[i]);
+			ret = -EINVAL;
+			break;
+		}
+		mfd->acq_fen[i] = fence;
+	}
+	fence_cnt = i;
+	if (ret)
+		goto buf_sync_err_1;
+	mfd->acq_fen_cnt = fence_cnt;
+	if (buf_sync->flags & MDP_BUF_SYNC_FLAG_WAIT) {
+		msm_fb_wait_for_fence(mfd);
+	}
+	mfd->cur_rel_sync_pt = sw_sync_pt_create(mfd->timeline,
+			mfd->timeline_value + 2);
+	if (mfd->cur_rel_sync_pt == NULL) {
+		pr_err("%s: cannot create sync point", __func__);
+		ret = -ENOMEM;
+		goto buf_sync_err_1;
+	}
+	/* create fence */
+	mfd->cur_rel_fence = sync_fence_create("mdp-fence",
+			mfd->cur_rel_sync_pt);
+	if (mfd->cur_rel_fence == NULL) {
+		sync_pt_free(mfd->cur_rel_sync_pt);
+		mfd->cur_rel_sync_pt = NULL;
+		pr_err("%s: cannot create fence", __func__);
+		ret = -ENOMEM;
+		goto buf_sync_err_1;
+	}
+	/* create fd */
+	mfd->cur_rel_fen_fd = get_unused_fd_flags(0);
+	sync_fence_install(mfd->cur_rel_fence, mfd->cur_rel_fen_fd);
+	ret = copy_to_user(buf_sync->rel_fen_fd,
+		&mfd->cur_rel_fen_fd, sizeof(int));
+	if (ret) {
+		pr_err("%s:copy_to_user failed", __func__);
+		goto buf_sync_err_2;
+	}
+	mutex_unlock(&mfd->sync_mutex);
+	return ret;
+buf_sync_err_2:
+	sync_fence_put(mfd->cur_rel_fence);
+	put_unused_fd(mfd->cur_rel_fen_fd);
+	mfd->cur_rel_fence = NULL;
+	mfd->cur_rel_fen_fd = 0;
+buf_sync_err_1:
+	for (i = 0; i < fence_cnt; i++)
+		sync_fence_put(mfd->acq_fen[i]);
+	mfd->acq_fen_cnt = 0;
+	mutex_unlock(&mfd->sync_mutex);
+	return ret;
+}
+
+static int buf_fence_process(struct msm_fb_data_type *mfd,
+						struct mdp_buf_fence *buf_fence)
+{
+	int i, fence_cnt = 0, ret;
+	struct sync_fence *fence;
+
+	if ((buf_fence->acq_fen_fd_cnt == 0) ||
+		(buf_fence->acq_fen_fd_cnt > MDP_MAX_FENCE_FD) ||
+		(mfd->timeline == NULL))
+		return -EINVAL;
+
+	mutex_lock(&mfd->sync_mutex);
+	for (i = 0; i < buf_fence->acq_fen_fd_cnt; i++) {
+		fence = sync_fence_fdget(buf_fence->acq_fen_fd[i]);
+		if (fence == NULL) {
+			pr_info("%s: null fence! i=%d fd=%d\n", __func__, i,
+				buf_fence->acq_fen_fd[i]);
+			ret = -EINVAL;
+			break;
+		}
+		mfd->acq_fen[i] = fence;
+	}
+	fence_cnt = i;
+	if (ret)
+		goto buf_fence_err_1;
+	mfd->cur_rel_sync_pt = sw_sync_pt_create(mfd->timeline,
+			mfd->timeline_value + 2);
+	if (mfd->cur_rel_sync_pt == NULL) {
+		pr_err("%s: cannot create sync point", __func__);
+		ret = -ENOMEM;
+		goto buf_fence_err_1;
+	}
+	/* create fence */
+	mfd->cur_rel_fence = sync_fence_create("mdp-fence",
+			mfd->cur_rel_sync_pt);
+	if (mfd->cur_rel_fence == NULL) {
+		sync_pt_free(mfd->cur_rel_sync_pt);
+		mfd->cur_rel_sync_pt = NULL;
+		pr_err("%s: cannot create fence", __func__);
+		ret = -ENOMEM;
+		goto buf_fence_err_1;
+	}
+	/* create fd */
+	mfd->cur_rel_fen_fd = get_unused_fd_flags(0);
+	if (mfd->cur_rel_fen_fd < 0) {
+		pr_err("%s: get_unused_fd_flags failed", __func__);
+		ret = -EIO;
+		goto buf_fence_err_2;
+	}
+	sync_fence_install(mfd->cur_rel_fence, mfd->cur_rel_fen_fd);
+	buf_fence->rel_fen_fd[0] = mfd->cur_rel_fen_fd;
+	/* Only one released fd for now, -1 indicates an end */
+	buf_fence->rel_fen_fd[1] = -1;
+	mfd->acq_fen_cnt = buf_fence->acq_fen_fd_cnt;
+	mutex_unlock(&mfd->sync_mutex);
+	return ret;
+buf_fence_err_2:
+	sync_fence_put(mfd->cur_rel_fence);
+	mfd->cur_rel_fence = NULL;
+	mfd->cur_rel_fen_fd = 0;
+buf_fence_err_1:
+	for (i = 0; i < fence_cnt; i++)
+		sync_fence_put(mfd->acq_fen[i]);
+	mfd->acq_fen_cnt = 0;
+	mutex_unlock(&mfd->sync_mutex);
+	return ret;
+}
+static int msmfb_display_commit(struct fb_info *info,
+						unsigned long *argp)
+{
+	int ret;
+	u32 copy_back = FALSE;
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+	struct mdp_display_commit disp_commit;
+	struct mdp_buf_fence *buf_fence;
+	ret = copy_from_user(&disp_commit, argp,
+			sizeof(disp_commit));
+	if (ret) {
+		pr_err("%s:copy_from_user failed", __func__);
+		return ret;
+	}
+	buf_fence = &disp_commit.buf_fence;
+	if (buf_fence->acq_fen_fd_cnt > 0)
+		ret = buf_fence_process(mfd, buf_fence);
+	if ((!ret) && (buf_fence->rel_fen_fd[0] > 0))
+		copy_back = TRUE;
+
+	ret = msm_fb_pan_display_ex(&disp_commit.var,
+			      info, disp_commit.wait_for_finish);
+
+	if (copy_back) {
+		ret = copy_to_user(argp,
+			&disp_commit, sizeof(disp_commit));
+		if (ret)
+			pr_err("%s:copy_to_user failed", __func__);
+	}
+	return ret;
+}
+
 static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -3408,6 +3568,7 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 #endif
 	struct mdp_page_protection fb_page_protection;
 	struct msmfb_mdp_pp mdp_pp;
+	struct mdp_buf_sync buf_sync;
 	int ret = 0;
 
 	switch (cmd) {
@@ -3420,11 +3581,6 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		break;
 	case MSMFB_OVERLAY_UNSET:
 		ret = msmfb_overlay_unset(info, argp);
-		break;
-	case MSMFB_OVERLAY_COMMIT:
-		down(&msm_fb_ioctl_ppp_sem);
-		ret = msmfb_overlay_commit(info, argp);
-		up(&msm_fb_ioctl_ppp_sem);
 		break;
 	case MSMFB_OVERLAY_PLAY:
 		ret = msmfb_overlay_play(info, argp);
@@ -3692,6 +3848,20 @@ static int msm_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			return ret;
 
 		ret = msmfb_handle_pp_ioctl(mfd, &mdp_pp);
+		break;
+	case MSMFB_BUFFER_SYNC:
+		ret = copy_from_user(&buf_sync, argp, sizeof(buf_sync));
+		if (ret)
+			return ret;
+
+		ret = msmfb_handle_buf_sync_ioctl(mfd, &buf_sync);
+
+		if (!ret)
+			ret = copy_to_user(argp, &buf_sync, sizeof(buf_sync));
+		break;
+
+	case MSMFB_DISPLAY_COMMIT:
+		ret = msmfb_display_commit(info, argp);
 		break;
 
 	default:
