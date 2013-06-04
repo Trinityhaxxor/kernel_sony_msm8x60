@@ -3578,7 +3578,7 @@ static int msmfb_display_commit(struct fb_info *info,
 	if ((!ret) && (buf_fence->rel_fen_fd[0] > 0))
 		copy_back = TRUE;
 
-	ret = msm_fb_pan_display_ex(info, &disp_commit);
+	ret = msm_fb_pan_display(info, &disp_commit);
 
 	if (copy_back) {
 		ret = copy_to_user(argp,
